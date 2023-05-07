@@ -1,0 +1,84 @@
+---
+
+- name: set fqdn 
+  set_fact:
+    vm_fqdn: "{{ vm_name }}.{{ vm_env }}.com"
+  tags: infoblox
+
+- name: set tower creds for infoblox
+  set_fact:
+    nios_provider:
+      username: "{{ user }}"
+      password: "{{ password }}"
+      host: "{{ ipam }}"
+  tags: infoblox
+
+- name: Delete the AD Computer Object
+  win_domain_computer:
+    domain_username: "{{ domain_user }}"
+    domain_password: "{{ domain_password }}"
+    name: "{{ vm_name }}"
+    state: absent
+  delegate_to: "{{ vm_fqdn }}"
+  vars:
+    ansible_connection: winrm
+    ansible_user: "{{ domain_user }}"
+    ansible_password: "{{ domain_password }}"
+    ansible_winrm_transport: ntlm
+    ansible_winrm_server_cert_validation: ignore
+    ansible_port: 5986
+
+
+- name: Power Off Virtual Machine
+  vmware_guest: 
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    name: "{{ vm_name }}"
+    state: poweredoff
+    state_change_timeout: 120
+
+- name: Delete the Virtual Machine
+  vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    name: "{{ vm_name }}"
+    state: absent
+
+- name: Remove host record requiring fqdn "{{ vm_fqdn|lower }}"
+  nios_host_record:
+    name: "{{ vm_fqdn|lower }}"
+    state: absent
+    view: default
+    provider: "{{ nios_provider }}"
+  tags: infoblox
+
+- name: Remove host record that is not in dns "{{ vm_fqdn|lower }}"
+  nios_host_record:
+    name: "{{ vm_fqdn|lower }}"
+    state: absent
+    dns: false
+    view: default
+    provider: "{{ nios_provider }}"
+  tags: infoblox
+
+- name: Remove A record requiring "{{ vm_ip }}" and "{{ vm_fqdn|lower }}"
+  nios_a_record:
+    ipv4: "{{ vm_ip }}"
+    name: "{{ vm_fqdn|lower }}"
+    state: absent
+    view: default
+    provider: "{{ nios_provider }}"
+  tags: infoblox
+
+- name: Remove PTR record requiring "{{ vm_ip }}" and "{{ vm_fqdn }}"
+  nios_ptr_record:
+    ipv4: "{{ vm_ip }}"
+    ptrdname: "{{ vm_fqdn }}"
+    state: absent
+    view: default
+    provider: "{{ nios_provider }}"
+  tags: infoblox
